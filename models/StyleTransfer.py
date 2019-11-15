@@ -14,7 +14,7 @@ def imshow(image, title=None):
     if title:
         plt.title(title)
 
-def load_img(path, img_max_dim=512):
+def load_img(path, img_max_dim=800):
     # load image from two paths
     img = tf.io.read_file(path)
     img = tf.image.decode_image(img, channels=3)
@@ -55,12 +55,14 @@ class StyleTransfer:
         style_target = self.style_img * 255.0
         content_target_prep = tf.keras.applications.vgg19.preprocess_input(content_target)
         style_target_prep = tf.keras.applications.vgg19.preprocess_input(style_target)
-        self.content_target = self.vgg(content_target_prep)[self.num_style_layers:]
+        content_target = self.vgg(content_target_prep)[self.num_style_layers:]
+        self.content_target = {content_name:value for content_name, value in zip(self.content_layers, content_target)}
         style_target = self.vgg(style_target_prep)[:self.num_style_layers]
-        self.style_target = [self.gram_matrix(output) for output in style_target]
+        style_target = [self.gram_matrix(output) for output in style_target]
+        self.style_target = {style_name:value for style_name, value in zip(self.style_layers, style_target)}
 
     def display_tensor(self, tensor):
-        tensor *= 255.0
+        tensor = tensor * 255.0
         tensor = np.array(tensor, dtype=np.uint8)
         if np.ndim(tensor) > 3:
             assert tensor.shape[0] == 1
@@ -79,6 +81,8 @@ class StyleTransfer:
         outputs = self.vgg(img_prep)
         style_outputs, content_outputs = (outputs[:self.num_style_layers], outputs[self.num_style_layers:])
         style_outputs = [self.gram_matrix(val) for val in style_outputs]
+        style_outputs = {style_name:value for style_name, value in zip(self.style_layers, style_outputs)}
+        content_outputs = {content_name:value for content_name, value in zip(self.content_layers, content_outputs)}
         style_loss = tf.add_n([tf.reduce_mean((style_outputs[name]-self.style_target[name])**2) for name in style_outputs.keys()])
         style_loss *= style_weight / self.num_style_layers
         content_loss = tf.add_n([tf.reduce_mean((content_outputs[name]-self.content_target[name])**2) for name in content_outputs.keys()])
@@ -95,7 +99,7 @@ class StyleTransfer:
             if denoise:
                 loss += denoise_weight * tf.image.total_variation(self.img)
         grad = tape.gradient(loss, self.img)
-        opt.apply_gradient([(grad, self.img)])
+        opt.apply_gradients([(grad, self.img)])
         self.img.assign(tf.clip_by_value(self.img, clip_value_min=0.0, clip_value_max=1.0))
 
     def transfer(self, opt, epochs=10, step_per_epoch=100, style_weight=1e-2, content_weight=1e4, denoise=True, denoise_weight=30):
@@ -110,3 +114,6 @@ class StyleTransfer:
             display(self.display_tensor(self.img))
             print("Train Step: {}".format(step))
         print("Total Time: {:.1f}".format(time.time() - start))
+
+    def savefig(self, path):
+        self.display_tensor(self.img).save(path)
