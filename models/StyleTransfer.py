@@ -14,7 +14,7 @@ def imshow(image, title=None):
     if title:
         plt.title(title)
 
-def load_img(path, img_max_dim=800):
+def load_img(path, img_max_dim=512):
     # load image from two paths
     img = tf.io.read_file(path)
     img = tf.image.decode_image(img, channels=3)
