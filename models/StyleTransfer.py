@@ -90,6 +90,7 @@ class StyleTransfer:
         return (style_loss + content_loss)
 
     def reset_trainable_img(self):
+        tf.keras.backend.clear_session()
         self.img = tf.Variable(self.content_img)
 
     @tf.function()
