@@ -89,7 +89,6 @@ class StyleTransfer:
         content_loss *= content_weight / self.num_content_layers
         return (style_loss + content_loss)
 
-    @tf.function()
     def train(self, opt, style_weight, content_weight, denoise, denoise_weight):
         with tf.GradientTape() as tape:
             loss = self.calc_loss(style_weight, content_weight)
