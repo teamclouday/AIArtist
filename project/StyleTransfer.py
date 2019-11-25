@@ -79,6 +79,14 @@ class StyleTransfer:
             tensor = tensor[0]
         return PIL.Image.fromarray(tensor)
 
+    def get_frame(self, tensor):
+        tensor = tensor * 255.0
+        tensor = np.array(tensor, dtype=np.uint8)
+        if np.ndim(tensor) > 3:
+            assert tensor.shape[0] == 1
+            tensor = tensor[0]
+        return tensor
+
     def gram_matrix(self, tensor):
         result = tf.linalg.einsum("bijc,bijd->bcd", tensor, tensor)
         shape = tf.shape(tensor)
