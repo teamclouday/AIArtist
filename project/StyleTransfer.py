@@ -27,6 +27,12 @@ def load_img(path, img_max_dim=512):
     img = img[tf.newaxis, :]
     return img
 
+def load_img2(img):
+    img = tf.image.convert_image_dtype(img, tf.float32)
+    shape = tf.cast(tf.shape(img)[:-1], tf.float32)
+    img = img[tf.newaxis, :]
+    return img
+
 class StyleTransfer:
     def __init__(self,
             content_img_path, style_img_path,
@@ -35,12 +41,16 @@ class StyleTransfer:
                           "block2_conv1",
                           "block3_conv1",
                           "block4_conv1",
-                          "block5_conv1"]):
+                          "block5_conv1"],
+            video=False):
         self.content_layers = content_layers
         self.style_layers = style_layers
         self.num_content_layers = len(content_layers)
         self.num_style_layers = len(style_layers)
-        self.content_img = load_img(content_img_path)
+        if not video:
+            self.content_img = load_img(content_img_path)
+        else:
+            self.content_img = load_img2(content_img_path)
         self.style_img = load_img(style_img_path)
         self.img = tf.Variable(self.content_img)
         self.load_layers()
