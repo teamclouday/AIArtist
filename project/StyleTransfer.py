@@ -54,6 +54,17 @@ class StyleTransfer:
         self.style_img = load_img(style_img_path)
         self.img = tf.Variable(self.content_img)
         self.load_layers()
+        
+    def update_content(self, content_img_path, video=False):
+        if not video:
+            self.content_img = load_img(content_img_path)
+        else:
+            self.content_img = load_img2(content_img_path)
+        self.img = tf.Variable(self.content_img)
+        content_target = self.content_img * 255.0
+        content_target_prep = tf.keras.applications.vgg19.preprocess_input(content_target)
+        content_target = self.vgg(content_target_prep)[self.num_style_layers:]
+        self.content_target = {content_name:value for content_name, value in zip(self.content_layers, content_target)}
 
     def load_layers(self):
         vgg = tf.keras.applications.VGG19(include_top=False, weights="imagenet")
