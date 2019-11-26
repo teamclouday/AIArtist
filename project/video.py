@@ -33,4 +33,3 @@ while(cap.isOpened()):
 
 cap.release()
 writer.release()
-cv2.destroyAllWindows()
