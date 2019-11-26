@@ -1,5 +1,6 @@
 import os, sys
 import time
+import random
 import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
@@ -29,8 +30,8 @@ def load_img(path, img_max_dim=512):
 
 def load_img2(img):
     img = tf.image.convert_image_dtype(img, tf.float32)
-    shape = tf.cast(tf.shape(img)[:-1], tf.float32)
-    img = img[tf.newaxis, :]
+    if len(img.shape) < 4:
+        img = img[tf.newaxis, :]
     return img
 
 class StyleTransfer:
@@ -53,6 +54,7 @@ class StyleTransfer:
             self.content_img = load_img2(content_img_path)
         self.style_img = load_img(style_img_path)
         self.img = tf.Variable(self.content_img)
+        self.img_shape = self.img.shape
         self.load_layers()
         
     def update_content(self, content_img_path, video=False):
@@ -94,9 +96,21 @@ class StyleTransfer:
         tensor = tensor * 255.0
         tensor = np.array(tensor, dtype=np.uint8)
         if np.ndim(tensor) > 3:
-            assert tensor.shape[0] == 1
             tensor = tensor[0]
         return tensor
+    
+    def apply_noise(self, noise_range, noise_count):
+        new_img = np.zeros(self.img_shape[1:], dtype=np.float32)
+        noise_range = int(noise_range)
+        noise_count = int(noise_count)
+        for i in range(noise_count):
+            xx = random.randrange(self.img_shape[1])
+            yy = random.randrange(self.img_shape[2])
+            new_img[xx, yy, 0] += random.randrange(-noise_range, noise_range) / 255.0
+            new_img[xx, yy, 1] += random.randrange(-noise_range, noise_range) / 255.0
+            new_img[xx, yy, 2] += random.randrange(-noise_range, noise_range) / 255.0
+        new_img = tf.Variable(new_img.reshape(self.img_shape))
+        return self.img + new_img
 
     def gram_matrix(self, tensor):
         result = tf.linalg.einsum("bijc,bijd->bcd", tensor, tensor)
@@ -104,8 +118,8 @@ class StyleTransfer:
         num = tf.cast(shape[1]*shape[2], tf.float32)
         return (result / num)
 
-    def calc_loss(self, style_weight=1e-2, content_weight=1e4):
-        img = self.img * 255.0
+    def calc_loss(self, style_weight, content_weight, img, noise_img, noise_weight):
+        img = img * 255.0
         img_prep = tf.keras.applications.vgg19.preprocess_input(img)
         outputs = self.vgg(img_prep)
         style_outputs, content_outputs = (outputs[:self.num_style_layers], outputs[self.num_style_layers:])
@@ -116,29 +130,54 @@ class StyleTransfer:
         style_loss *= style_weight / self.num_style_layers
         content_loss = tf.add_n([tf.reduce_mean((content_outputs[name]-self.content_target[name])**2) for name in content_outputs.keys()])
         content_loss *= content_weight / self.num_content_layers
-        return (style_loss + content_loss)
+        total_loss = style_loss + content_loss
+        
+        if noise_img is not None:
+            noise_img = tf.keras.applications.vgg19.preprocess_input(noise_img)
+            noise_outputs = self.vgg(noise_img)
+            noise_loss = tf.add_n([tf.reduce_mean((outputs[i]-noise_outputs[i])**2) for i in range(len(outputs))]) / len(outputs)
+            total_loss += noise_weight * noise_loss
+        
+        return total_loss
 
-    def train(self, opt, style_weight, content_weight, denoise, denoise_weight):
+    def train(self, opt, style_weight, content_weight, denoise, denoise_weight, previous_img, previous_weight, noise_range, noise_count, noise_weight):
         with tf.GradientTape() as tape:
-            loss = self.calc_loss(style_weight, content_weight)
+            noise_img = None
+            if noise_count is not None:
+                noise_img = self.apply_noise(noise_range, noise_count)
+            loss = self.calc_loss(style_weight, content_weight, self.img, noise_img, noise_weight)
             if denoise:
                 loss += denoise_weight * tf.image.total_variation(self.img)
+            if previous_img is not None:
+                prev = tf.image.rgb_to_grayscale(previous_img)
+                now = tf.image.rgb_to_grayscale(self.img)
+                loss += previous_weight * tf.reduce_sum(tf.math.square(prev - now))
+                
         grad = tape.gradient(loss, self.img)
         opt.apply_gradients([(grad, self.img)])
         self.img.assign(tf.clip_by_value(self.img, clip_value_min=0.0, clip_value_max=1.0))
+        return grad
 
-    def transfer(self, opt, epochs=10, step_per_epoch=100, style_weight=1e-2, content_weight=1e4, denoise=True, denoise_weight=30):
+    def transfer(self, opt, epochs=10, step_per_epoch=100, style_weight=1e-2, content_weight=1e4,
+                 denoise=True, denoise_weight=30, return_grad=False,
+                 previous_img=None, previous_weight=0.5,
+                 noise_range=30, noise_count=None, noise_weight=1e2):
         start = time.time()
         step = 0
+        grads = []
         for n in range(epochs):
             for m in range(step_per_epoch):
                 step += 1
-                self.train(opt, style_weight, content_weight, denoise, denoise_weight)
+                grad = self.train(opt, style_weight, content_weight, denoise, denoise_weight, previous_img, previous_weight, noise_range, noise_count, noise_weight)
+                if return_grad:
+                    grads.append(grad)
                 print(".", end="")
             clear_output(wait=True)
             display(self.display_tensor(self.img))
             print("Train Step: {}".format(step))
         print("Total Time: {:.1f}".format(time.time() - start))
+        if return_grad:
+            return grads
 
     def savefig(self, path):
         self.display_tensor(self.img).save(path)
