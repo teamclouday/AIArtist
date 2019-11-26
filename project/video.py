@@ -26,7 +26,7 @@ while(cap.isOpened()):
         opt = tf.optimizers.Adam(learning_rate=0.1, beta_1=0.8, epsilon=1e-1)
         model.transfer(opt, epochs=1, step_per_epoch=20, style_weight=1e6, content_weight=1e2, denoise_weight=400)
         newframe = model.get_frame(model.img)
-        frame = cv2.cvtColor(newframe, cv2.COLOR_RGB2BGR)
+        newframe = cv2.cvtColor(newframe, cv2.COLOR_RGB2BGR)
         writer.write(newframe)
     else:
         break
