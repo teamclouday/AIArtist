@@ -110,7 +110,7 @@ class StyleTransfer:
             new_img[xx, yy, 1] += random.randrange(-noise_range, noise_range) / 255.0
             new_img[xx, yy, 2] += random.randrange(-noise_range, noise_range) / 255.0
         new_img = tf.Variable(new_img.reshape(self.img_shape))
-        return self.img + new_img
+        return tf.identity(self.img) + new_img
 
     def gram_matrix(self, tensor):
         result = tf.linalg.einsum("bijc,bijd->bcd", tensor, tensor)
@@ -118,7 +118,7 @@ class StyleTransfer:
         num = tf.cast(shape[1]*shape[2], tf.float32)
         return (result / num)
 
-    def calc_loss(self, style_weight, content_weight, img, noise_img, noise_weight):
+    def calc_loss(self, style_weight, content_weight, img):
         img = img * 255.0
         img_prep = tf.keras.applications.vgg19.preprocess_input(img)
         outputs = self.vgg(img_prep)
@@ -131,21 +131,15 @@ class StyleTransfer:
         content_loss = tf.add_n([tf.reduce_mean((content_outputs[name]-self.content_target[name])**2) for name in content_outputs.keys()])
         content_loss *= content_weight / self.num_content_layers
         total_loss = style_loss + content_loss
-        
-        if noise_img is not None:
-            noise_img = tf.keras.applications.vgg19.preprocess_input(noise_img)
-            noise_outputs = self.vgg(noise_img)
-            noise_loss = tf.add_n([tf.reduce_mean((outputs[i]-noise_outputs[i])**2) for i in range(len(outputs))]) / len(outputs)
-            total_loss += noise_weight * noise_loss
-        
         return total_loss
 
     def train(self, opt, style_weight, content_weight, denoise, denoise_weight, previous_img, previous_weight, noise_range, noise_count, noise_weight):
         with tf.GradientTape() as tape:
+            loss = self.calc_loss(style_weight, content_weight, self.img)
             noise_img = None
             if noise_count is not None:
                 noise_img = self.apply_noise(noise_range, noise_count)
-            loss = self.calc_loss(style_weight, content_weight, self.img, noise_img, noise_weight)
+                loss += noise_weight * self.calc_loss(style_weight, content_weight, noise_img)
             if denoise:
                 loss += denoise_weight * tf.image.total_variation(self.img)
             if previous_img is not None:
