@@ -143,9 +143,9 @@ class StyleTransfer:
             if denoise:
                 loss += denoise_weight * tf.image.total_variation(self.img)
             if previous_img is not None:
-                prev = tf.image.rgb_to_grayscale(previous_img)
-                now = tf.image.rgb_to_grayscale(self.img)
-                loss += previous_weight * tf.reduce_sum(tf.math.square(prev - now))
+                prev = previous_img.numpy().reshape(previous_img.shape[1:])
+                now = self.img.numpy().reshape(self.img.shape[1:])
+                loss += previous_weight * np.sum(np.sum((prev - now).reshape(prev.shape[0]*prev.shape[1], prev.shape[2]), axis=0) ** 2) / (prev.shape[0] * prev.shape[1]) / 3.0
                 
         grad = tape.gradient(loss, self.img)
         opt.apply_gradients([(grad, self.img)])
